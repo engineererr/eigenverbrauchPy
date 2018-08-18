@@ -1,148 +1,118 @@
-import csv
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
+from matplotlib.widgets import Slider
+import calculator as calc
+sim = calc.Simulator()
 
-# in kwh, kwh/100km
+# battery capacity in kwh, kwh/100km
 elektroautoTeslaKlein = 75, 18.5
 elektroautoTeslaGross = 100, 18.9
 elektroautoRenaultZoe = 22, 13.3
 elektroautoBMWi3 = 18.8, 13.1
 elektroautoNissanLeaf = 40, 17.4
 
-
-def calculate(modulgrosse, batteryCapacity=0, wirkungsgrad=0.14, verluste=0.75, car=None, kmProTag=None):
-    batteryBefore = 0
-    produktionTotal = 0
-
-    einspeisungTotal = 0
-
-    netznutzungTotal = 0
-    eigenverbrauchTotal = 0
-
-    if(car is not None):
-        carBatteryLevelCurrentDay = car[0]
-
-    carUsableAsBattery = False
-    with open('daten.csv', newline='') as csvfile:
-        datareader = csv.DictReader(csvfile, delimiter=';')
-        for row in datareader:
-
-            # basic data
-            einspeisung = 0
-            netznutzung = 0
-
-            if(car is not None):
-                hourOfTheDay = int(row['Stunde']) % 24
-                # car parks at home at 18 Uhr
-                if(hourOfTheDay == 12):
-                    carBatteryLevelCurrentDay -= car[1] / 100 * kmProTag
-                    carUsableAsBattery = True
-                # car leaves home at 6 Uhr
-                elif(hourOfTheDay == 6):
-                    netznutzung += car[0] - carBatteryLevelCurrentDay
-                    carBatteryLevelCurrentDay = car[0]
-                    carUsableAsBattery = False
-
-            produktion = float(row['Einstrahlung in Modulebene m2']
-                               ) * modulgrosse * wirkungsgrad * verluste
-
-            remainingEnergy = produktion - \
-                float(row['Verbrauch 4 Pers'])
-            remainingEnergyWithBattery = remainingEnergy + batteryBefore
-
-            if(remainingEnergyWithBattery >= batteryCapacity):
-                remainingEnergyAfterFillingBattery = abs(
-                    remainingEnergyWithBattery - batteryCapacity)
-                batteryNow = batteryCapacity
-                if(carUsableAsBattery and car[0] > carBatteryLevelCurrentDay + remainingEnergyAfterFillingBattery):
-                    # we use the car as a battery
-                    carBatteryLevelCurrentDay += remainingEnergyAfterFillingBattery
-                else:
-                    einspeisung += remainingEnergyAfterFillingBattery
-            elif(remainingEnergyWithBattery < 0):
-                batteryNow = 0.0
-                netznutzung += abs(remainingEnergyWithBattery)
-            else:
-                batteryNow = remainingEnergyWithBattery
-
-            # eigenverbrauch
-            eigenverbrauch = produktion - einspeisung
-
-            # totale
-            produktionTotal += produktion
-            einspeisungTotal += einspeisung
-            netznutzungTotal += netznutzung
-            eigenverbrauchTotal += eigenverbrauch
-
-            # stuff
-            batteryBefore = batteryNow
-            # print('Stunde', row['Stunde'], 'Datum', row['Datum'], 'Produktion', row['Einstrahlung in Modulebene m2'], 'Verbrauch',
-            #      row['Verbrauch 4 Pers'], 'Battery', batteryNow, 'Einspeisung', einspeisung, 'Netznutzung', netznutzung, 'Eigenverbrauch', eigenverbrauch)
-
-    # print('produktionTotal', produktionTotal, 'einspeisungTotal', einspeisungTotal,
-    #       'netznutzungTotal', netznutzungTotal, 'eigenverbrauchTotal', eigenverbrauchTotal)
-
-    return {'produktionTotal': produktionTotal, 'einspeisungTotal': einspeisungTotal, 'netznutzungTotal': netznutzungTotal, 'eigenverbrauchTotal': eigenverbrauchTotal}
+# variables
+simulationResult = 0
+eigenverbrauchProH = 0
+eigenverbrauchProJ = 0
+produktionProJ = 0
+EVA = 0
+nth = 24
+modulgrosse = 10
+batterygrosse = 6
 
 
-# resultatMitBatteryOhneAuto = calculate(batteryCapacity=13,
-#                                        modulgrosse=25)
-
-# resultatMitBatteryMitAuto = calculate(modulgrosse=25,
-#                                       car=elektroautoTeslaKlein,
-#                                       kmProTag=60)
+# simulates the year and saves result in simulationResult
+def simulate(modulgrosse, battery=0):
+    global simulationResult
+    simulationResult = sim.calculateDays(modulgrosse, batteryCapacity=battery)
 
 
-# resultatOhneBatteryOhneAuto = calculate(modulgrosse=25)
+# calculates based on simulationResults the Eigenverbrauch per hour
+def calculateEV():
+    global eigenverbrauchProH
+    eigenverbrauchProH = [v['eigenverbrauch'] for v in simulationResult]
 
 
-# resultatOhneBatteryMitAuto = calculate(modulgrosse=25,
-#                                        car=elektroautoTeslaKlein,
-#                                        kmProTag=40)
+# calculates based on simulationResults the EVA per year
+def calculateEVA():
+    global EVA
+    global produktionProH
+    global produktionProJ
+    produktionProH = [v['produktion'] for v in simulationResult]
+
+    produktionProJ = 0
+    for val in enumerate(produktionProH):
+        produktionProJ += val
+
+    eva = eigenverbrauchProJ / produktionProJ
 
 
-# print('Eigenverbrauch mit Batterie um', resultMitBattery['eigenverbrauchTotal'] /
-#       resultOhneBattery['eigenverbrauchTotal'], 'mal höher')
-
-# print('Eigenverbrauch mit Batterie und mit Auto um', resultatMitBatteryMitAuto['eigenverbrauchTotal'] /
-#       resultatMitBatteryOhneAuto['eigenverbrauchTotal'], 'mal höher als ohne Auto')
-
-# eigenverbrauchNullBisHundert = []
-# for x in range(0, 100):
-#     # print('Modulgrösse', x)
-#     resultatMitBatteryOhneAuto = calculate(batteryCapacity=13,
-#                                            modulgrosse=x)
-#     eigenverbrauchNullBisHundert.append(
-#         resultatMitBatteryOhneAuto['eigenverbrauchTotal'])
-
-def calculateModulgrosseRange(range):
-    result = []
-    for x in range:
-        result.append(calculate(modulgrosse=x)[
-                      'eigenverbrauchTotal'])
-    return result
+def calcY():
+    global nth
+    global eigenverbrauchProJ
+    y = []
+    currSum = 0
+    eigenverbrauchProJ = 0
+    for idx, val in enumerate(eigenverbrauchProH):
+        if(idx % nth == 0):
+            y.append(currSum)
+            eigenverbrauchProJ += currSum
+            currSum = 0
+        else:
+            currSum += val
+    return y
 
 
-def calculateKmGefahrenRange(range, modulgrosse):
-    result = []
-    for x in range:
-        result.append(calculate(modulgrosse=modulgrosse, car=elektroautoTeslaGross, kmProTag=x)[
-                      'eigenverbrauchTotal'])
-    return result
+def update(val):
+    global modulgrosse
+    global batterygrosse
+    modulgrosse = slidersqm.val
+    batterygrosse = sliderbattery.val
+    simulate(modulgrosse, batterygrosse)
+    calculateEV()
+    yData = calcY()
+    l.set_ydata(yData)
+    ax.set_title(
+        f'EVA over the year with {int(round(modulgrosse))} qm solar panels and {int(round(batterygrosse))} kWh battery - Total EVA={round(EVA, 2)}')
+    fig.canvas.draw_idle()
 
 
-x = range(0, 100, 10)
+# plot init
+fig, ax = plt.subplots()
+plt.subplots_adjust(left=0.1, bottom=0.25)
+x = range(0, int(8760/nth))
 
-plt.title('KM driven by different module sizes')
+# plot
+simulate(modulgrosse, batterygrosse)
+calculateEV()
+yData = calcY()
+l, = ax.plot(x, yData, label='EVA')
 
-ax = plt.subplot(111)
+ax.set_title(
+    f'EVA over the year with {int(round(modulgrosse))} qm solar panels and {int(round(batterygrosse))} kWh battery - Total EV={round(eigenverbrauchProJ, 2)} - EVA={EVA}')
 
-ax.plot(x, calculateKmGefahrenRange(x, 10), label='10')
-ax.plot(x, calculateKmGefahrenRange(x, 20), label='20')
-# plt.plot(x, calculateKmGefahrenRange(x, 30), label='30')
-# plt.plot(x, calculateKmGefahrenRange(x, 40), label='40')
-# plt.plot(x, calculateKmGefahrenRange(x, 50), label='50')
+ax.set_ylim(0, 30)
+# squaremeter slider
+axcolor = 'lightblue'
+axqm = plt.axes([0.1, 0.05, 0.8, 0.03], facecolor=axcolor)
+f0 = 50
+delta_f = 5
+slidersqm = Slider(axqm, 'QM', 10, 100, valinit=f0, valstep=delta_f)
+
+slidersqm.on_changed(update)
+
+# battery size slider
+axcolor = 'lightblue'
+axbatt = plt.axes([0.1, 0.1, 0.8, 0.03], facecolor=axcolor)
+g0 = 6
+delta_g = 1
+sliderbattery = Slider(axbatt, 'Battery', 0, 13, valinit=g0, valstep=delta_g)
+
+sliderbattery.on_changed(update)
+
+# legendary
 ax.legend(loc='upper center', bbox_to_anchor=(
     0.5, -0.05),  shadow=True, ncol=2)
 plt.show()
