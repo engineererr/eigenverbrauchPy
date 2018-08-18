@@ -19,7 +19,7 @@ eigenverbrauchProJ = 0
 produktionProJ = 0
 EVA = 0
 nth = 24
-modulgrosse = 10
+modulgrosse = 50
 batterygrosse = 6
 
 
@@ -43,10 +43,10 @@ def calculateEVA():
     produktionProH = [v['produktion'] for v in simulationResult]
 
     produktionProJ = 0
-    for val in enumerate(produktionProH):
+    for idx, val in enumerate(produktionProH):
         produktionProJ += val
 
-    eva = eigenverbrauchProJ / produktionProJ
+    EVA = eigenverbrauchProJ / produktionProJ
 
 
 def calcY():
@@ -73,9 +73,10 @@ def update(val):
     simulate(modulgrosse, batterygrosse)
     calculateEV()
     yData = calcY()
+    calculateEVA()
     l.set_ydata(yData)
     ax.set_title(
-        f'EVA over the year with {int(round(modulgrosse))} qm solar panels and {int(round(batterygrosse))} kWh battery - Total EVA={round(EVA, 2)}')
+        f'EVA over the year with {int(round(modulgrosse))} qm solar panels and {int(round(batterygrosse))} kWh battery - Total Production={round(produktionProJ, 2)} - Total EV={round(eigenverbrauchProJ, 2)} - EVA={round(EVA * 100, 2)}%')
     fig.canvas.draw_idle()
 
 
@@ -88,16 +89,17 @@ x = range(0, int(8760/nth))
 simulate(modulgrosse, batterygrosse)
 calculateEV()
 yData = calcY()
+calculateEVA()
 l, = ax.plot(x, yData, label='EVA')
 
 ax.set_title(
-    f'EVA over the year with {int(round(modulgrosse))} qm solar panels and {int(round(batterygrosse))} kWh battery - Total EV={round(eigenverbrauchProJ, 2)} - EVA={EVA}')
+    f'EVA over the year with {int(round(modulgrosse))} qm solar panels and {int(round(batterygrosse))} kWh battery - Total Production={round(produktionProJ, 2)} - Total EV={round(eigenverbrauchProJ, 2)} - EVA={round(EVA * 100, 2)}%')
 
 ax.set_ylim(0, 30)
 # squaremeter slider
 axcolor = 'lightblue'
 axqm = plt.axes([0.1, 0.05, 0.8, 0.03], facecolor=axcolor)
-f0 = 50
+f0 = modulgrosse
 delta_f = 5
 slidersqm = Slider(axqm, 'QM', 10, 100, valinit=f0, valstep=delta_f)
 
@@ -106,7 +108,7 @@ slidersqm.on_changed(update)
 # battery size slider
 axcolor = 'lightblue'
 axbatt = plt.axes([0.1, 0.1, 0.8, 0.03], facecolor=axcolor)
-g0 = 6
+g0 = batterygrosse
 delta_g = 1
 sliderbattery = Slider(axbatt, 'Battery', 0, 13, valinit=g0, valstep=delta_g)
 
