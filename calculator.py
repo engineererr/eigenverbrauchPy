@@ -1,11 +1,14 @@
 import csv
 
-# vars
-
+# das Elektroauto wird vollgeladen, sobald am aktuellen Tag keine überschüssige Energie mehr vorhanden ist. Die Ladeleistung wird nicht berücksichtigt.
 
 class Simulator:
-    def calculateYear(self, modulgrosse, batteryCapacity=0, wirkungsgrad=0.14, verluste=0.75, car=None, kmProTag=None):
-        batteryBefore = 0
+    # gibt aufsummierte Werte zurück
+    def calculateYear(self, modulgrosse, batterieKapazitat=0, wirkungsgrad=0.14, verluste=0.75, elektroAuto=None, kmProTag=None):
+        autoAnkunftszeit = 18
+        autoAbfahrtszeit = 6
+
+        batterieVorher = 0
         produktionTotal = 0
         verbrauchTotal = 0
         einspeisungTotal = 0
@@ -13,131 +16,144 @@ class Simulator:
         netznutzungTotal = 0
         eigenverbrauchTotal = 0
 
-        if(car is not None):
-            carBatteryLevelCurrentDay = car[0]
+        if(elektroAuto is not None):
+            autoLadestandHeutigerTag = elektroAuto[0]
 
-        carUsableAsBattery = False
+        autoNutzbarAlsBatterie = False
         with open('daten.csv', newline='') as csvfile:
             datareader = csv.DictReader(csvfile, delimiter=';')
+            # für jede Zeile im CSV
             for row in datareader:
-
-                # basic data
                 einspeisung = 0
                 netznutzung = 0
 
-                if(car is not None):
-                    hourOfTheDay = int(row['Stunde']) % 24
-                    # car parks at home at 18 Uhr
-                    if(hourOfTheDay == 12):
-                        carBatteryLevelCurrentDay -= car[1] / 100 * kmProTag
-                        carUsableAsBattery = True
-                    # car leaves home at 6 Uhr
-                    elif(hourOfTheDay == 6):
-                        netznutzung += car[0] - carBatteryLevelCurrentDay
-                        carBatteryLevelCurrentDay = car[0]
-                        carUsableAsBattery = False
+                if(elektroAuto is not None):
+                    tagesStunde = int(row['Stunde']) % 24
+                    # Auto parkiert um 18 Uhr
+                    if(tagesStunde == autoAnkunftszeit):
+                        autoLadestandHeutigerTag -= elektroAuto[1] / \
+                            100 * kmProTag
+                        autoNutzbarAlsBatterie = True
+                    # Auto fährt weg um 6 Uhr
+                    elif(tagesStunde == autoAbfahrtszeit):
+                        netznutzung += elektroAuto[0] - \
+                            autoLadestandHeutigerTag
+                        autoLadestandHeutigerTag = elektroAuto[0]
+                        autoNutzbarAlsBatterie = False
 
                 produktion = float(row['Einstrahlung in Modulebene m2']
                                    ) * modulgrosse * wirkungsgrad * verluste
 
                 verbrauch = float(row['Verbrauch 4 Pers'])
                 remainingEnergy = produktion - verbrauch
-                remainingEnergyWithBattery = remainingEnergy + batteryBefore
+                ubrigeEnergieMitBatterie = remainingEnergy + batterieVorher
 
-                if(remainingEnergyWithBattery >= batteryCapacity):
+                # Battery ist voll, Energie wird eingespiesen
+                if(ubrigeEnergieMitBatterie >= batterieKapazitat):
                     remainingEnergyAfterFillingBattery = abs(
-                        remainingEnergyWithBattery - batteryCapacity)
-                    batteryNow = batteryCapacity
-                    if(carUsableAsBattery and car[0] > carBatteryLevelCurrentDay + remainingEnergyAfterFillingBattery):
-                        # we use the car as a battery
-                        carBatteryLevelCurrentDay += remainingEnergyAfterFillingBattery
+                        ubrigeEnergieMitBatterie - batterieKapazitat)
+                    batterieJetzt = batterieKapazitat
+                    if(autoNutzbarAlsBatterie and elektroAuto[0] > autoLadestandHeutigerTag + remainingEnergyAfterFillingBattery):
+                        # Auto wird als Batterie genutzt
+                        autoLadestandHeutigerTag += remainingEnergyAfterFillingBattery
                     else:
                         einspeisung += remainingEnergyAfterFillingBattery
-                elif(remainingEnergyWithBattery < 0):
-                    batteryNow = 0.0
-                    netznutzung += abs(remainingEnergyWithBattery)
+                # zu wenige Energie vorhanden,  Netz wird genutzt
+                elif(ubrigeEnergieMitBatterie < 0):
+                    batterieJetzt = 0.0
+                    netznutzung += abs(ubrigeEnergieMitBatterie)
+                    # wenn Auto am System angeschlossen und nicht vollgeladen, dann bezieht das Auto Strom vom Netz
+                    if(autoNutzbarAlsBatterie):
+                        netznutzung += abs(elektroAuto[0] -
+                                           autoLadestandHeutigerTag)
+                        autoLadestandHeutigerTag = elektroAuto[0]
                 else:
-                    batteryNow = remainingEnergyWithBattery
+                    batterieJetzt = ubrigeEnergieMitBatterie
 
-                # eigenverbrauch
+                # Eigenverbrauch
                 eigenverbrauch = produktion - einspeisung
 
-                # totale
+                # Totale
                 produktionTotal += produktion
                 einspeisungTotal += einspeisung
                 netznutzungTotal += netznutzung
                 eigenverbrauchTotal += eigenverbrauch
                 verbrauchTotal += verbrauch
 
-                # stuff
-                batteryBefore = batteryNow
-                # print('Stunde', row['Stunde'], 'Datum', row['Datum'], 'Produktion', row['Einstrahlung in Modulebene m2'], 'Verbrauch',
-                #      row['Verbrauch 4 Pers'], 'Battery', batteryNow, 'Einspeisung', einspeisung, 'Netznutzung', netznutzung, 'Eigenverbrauch', eigenverbrauch)
-
-        print('produktionTotal', produktionTotal, 'verbrauchTotal', verbrauchTotal, 'einspeisungTotal', einspeisungTotal,
-              'netznutzungTotal', netznutzungTotal, 'eigenverbrauchTotal', eigenverbrauchTotal)
-
+                # Variable, um den vorherigen Batteriestand zu merken, wird auf den aktuellen Wert gesetzt
+                batterieVorher = batterieJetzt
         return {'produktionTotal': produktionTotal, 'verbrauchTotal': verbrauchTotal, 'einspeisungTotal': einspeisungTotal, 'netznutzungTotal': netznutzungTotal, 'eigenverbrauchTotal': eigenverbrauchTotal}
 
-    def calculateDays(self, modulgrosse, batteryCapacity=0, wirkungsgrad=0.14, verluste=0.75, car=None, kmProTag=None):
-        batteryBefore = 0
+    # gibt eine Datenreihe für jeden Stunde zurück
+    def calculateDays(self, modulgrosse, batterieKapazitat=0, wirkungsgrad=0.14, verluste=0.75, elektroAuto=None, kmProTag=None):
+        batterieVorher = 0
+        autoAnkunftszeit = 18
+        autoAbfahrtszeit = 6
+        resultat = []
 
-        result = []
+        if(elektroAuto is not None):
+            autoLadestandHeutigerTag = elektroAuto[0]
 
-        if(car is not None):
-            carBatteryLevelCurrentDay = car[0]
-
-        carUsableAsBattery = False
+        autoNutzbarAlsBatterie = False
         with open('daten.csv', newline='') as csvfile:
             datareader = csv.DictReader(csvfile, delimiter=';')
+            # für jede Zeile im CSV
             for row in datareader:
 
-                # basic data
                 einspeisung = 0
                 netznutzung = 0
 
-                if(car is not None):
-                    hourOfTheDay = int(row['Stunde']) % 24
-                    # car parks at home at 18 Uhr
-                    if(hourOfTheDay == 12):
-                        carBatteryLevelCurrentDay -= car[1] / 100 * kmProTag
-                        carUsableAsBattery = True
-                    # car leaves home at 6 Uhr
-                    elif(hourOfTheDay == 6):
-                        netznutzung += car[0] - carBatteryLevelCurrentDay
-                        carBatteryLevelCurrentDay = car[0]
-                        carUsableAsBattery = False
+                if(elektroAuto is not None):
+                    tagesStunde = int(row['Stunde']) % 24
+                    # Auto parkiert um 18 Uhr
+                    if(tagesStunde == autoAnkunftszeit):
+                        autoLadestandHeutigerTag -= elektroAuto[1] / \
+                            100 * kmProTag
+                        autoNutzbarAlsBatterie = True
+                    # Auto fährt weg um 18 Uhr
+                    elif(tagesStunde == autoAbfahrtszeit):
+                        netznutzung += elektroAuto[0] - \
+                            autoLadestandHeutigerTag
+                        autoLadestandHeutigerTag = elektroAuto[0]
+                        autoNutzbarAlsBatterie = False
 
                 produktion = float(row['Einstrahlung in Modulebene m2']
                                    ) * modulgrosse * wirkungsgrad * verluste
 
                 verbrauch = float(row['Verbrauch 4 Pers'])
                 remainingEnergy = produktion - verbrauch
-                remainingEnergyWithBattery = remainingEnergy + batteryBefore
+                ubrigeEnergieMitBatterie = remainingEnergy + batterieVorher
 
-                if(remainingEnergyWithBattery >= batteryCapacity):
+                # Battery ist voll, Energie wird eingespiesen
+                if(ubrigeEnergieMitBatterie >= batterieKapazitat):
                     remainingEnergyAfterFillingBattery = abs(
-                        remainingEnergyWithBattery - batteryCapacity)
-                    batteryNow = batteryCapacity
-                    if(carUsableAsBattery and car[0] > carBatteryLevelCurrentDay + remainingEnergyAfterFillingBattery):
-                        # we use the car as a battery
-                        carBatteryLevelCurrentDay += remainingEnergyAfterFillingBattery
+                        ubrigeEnergieMitBatterie - batterieKapazitat)
+                    batterieJetzt = batterieKapazitat
+                    if(autoNutzbarAlsBatterie and elektroAuto[0] > autoLadestandHeutigerTag + remainingEnergyAfterFillingBattery):
+                        # Auto wird als Batterie genutzt
+                        autoLadestandHeutigerTag += remainingEnergyAfterFillingBattery
                     else:
                         einspeisung += remainingEnergyAfterFillingBattery
-                elif(remainingEnergyWithBattery < 0):
-                    batteryNow = 0.0
-                    netznutzung += abs(remainingEnergyWithBattery)
+                # zu wenige Energie vorhanden,  Netz wird genutzt
+                elif(ubrigeEnergieMitBatterie < 0):
+                    batterieJetzt = 0.0
+                    netznutzung += abs(ubrigeEnergieMitBatterie)
+                    # wenn Auto am System angeschlossen und nicht vollgeladen, dann bezieht das Auto Strom vom Netz
+                    if(autoNutzbarAlsBatterie):
+                        netznutzung += abs(elektroAuto[0] -
+                                           autoLadestandHeutigerTag)
+                        autoLadestandHeutigerTag = elektroAuto[0]
                 else:
-                    batteryNow = remainingEnergyWithBattery
+                    batterieJetzt = ubrigeEnergieMitBatterie
 
-                # eigenverbrauch
+                # Eigenverbrauch
                 eigenverbrauch = produktion - einspeisung
 
-                # stuff
-                batteryBefore = batteryNow
+                # Variable, um den vorherigen Batteriestand zu merken, wird auf den aktuellen Wert gesetzt
+                batterieVorher = batterieJetzt
 
-                # totale
-                result.append({'stunde': row['Stunde'], 'produktion': produktion, 'verbrauch': verbrauch, 'einspeisung': einspeisung,
-                               'netznutzung': netznutzung, 'eigenverbrauch': eigenverbrauch})
+                # Totale
+                resultat.append({'stunde': row['Stunde'], 'produktion': produktion, 'verbrauch': verbrauch, 'einspeisung': einspeisung,
+                                 'netznutzung': netznutzung, 'eigenverbrauch': eigenverbrauch})
 
-        return result
+        return resultat
